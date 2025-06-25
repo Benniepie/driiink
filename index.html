@@ -52,7 +52,7 @@
 
     <div id="tooltip"></div>
 
-    <div class="max-w-7xl mx-auto">
+    <div class="mx-auto">
         <header class="mb-8 text-center">
             <h1 class="text-3xl sm:text-4xl font-bold text-cyan-400 mb-2">BlueSky Geopolitical Trend Monitor</h1>
             <div class="add-keyword-panel mt-4 flex items-center justify-center space-x-2 bg-gray-800 p-2 rounded-lg">
@@ -78,7 +78,7 @@
         <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div class="md:col-span-2">
                  <h2 class="text-xl font-bold text-cyan-400 mb-2">Keyword Velocity</h2>
-                <div id="keyword-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4"></div>
+                <div id="keyword-grid" class="flex flex-wrap gap-4"></div>
             </div>
             <div class="md:col-span-1">
                 <h2 class="text-xl font-bold text-cyan-400 mb-2">Top Quoted Posts</h2>
@@ -206,7 +206,7 @@
                     if (kwState.hidden) return;
                     
                     const container = document.createElement('div');
-                    container.className = 'keyword-indicator p-3 bg-gray-800 rounded-lg flex flex-col justify-between min-h-[160px]';
+                    container.className = 'keyword-indicator p-3 bg-gray-800 rounded-lg flex flex-col justify-between min-h-[160px] w-72'; // Added w-72
                     container.dataset.keyword = key;
                     
                     const header = document.createElement('div');
