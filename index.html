@@ -173,6 +173,7 @@
                         loadedKeywords.set(key, { name: defaultKw.name, requiresBreaking: defaultKw.requiresBreaking, hidden: false });
                     }
                 });
+                state.keywords.clear(); // Clear existing keywords before loading new/updated ones
                 loadedKeywords.forEach((loadedKwData, key) => { // Renamed kwData to loadedKwData for clarity
                     const defaultKeywordConfig = DEFAULT_KEYWORDS_CONFIG.find(dk => dk.name.toLowerCase() === key);
                     // For requiresBreaking: use stored boolean, else default config's value, else false.
@@ -259,10 +260,19 @@
                     breakingCheckbox.type = 'checkbox';
                     breakingCheckbox.className = 'mr-2';
                     breakingCheckbox.checked = kwState.requiresBreaking;
-                    breakingCheckbox.addEventListener('change', () => {
-                        kwState.requiresBreaking = breakingCheckbox.checked;
-                        resetKeywordStats(kwState);
-                        saveSettings();
+                    // Capture key for use in listener to ensure fresh state object is used
+                    const currentKeyForListener = key;
+                    breakingCheckbox.addEventListener('change', (event) => {
+                        const checkboxIsChecked = event.target.checked;
+                        const keywordStateToUpdate = state.keywords.get(currentKeyForListener);
+
+                        if (keywordStateToUpdate) {
+                            keywordStateToUpdate.requiresBreaking = checkboxIsChecked;
+                            resetKeywordStats(keywordStateToUpdate);
+                            saveSettings();
+                        } else {
+                            console.error("Breaking checkbox: Could not find keyword state for key:", currentKeyForListener);
+                        }
                     });
                     breakingLabel.appendChild(breakingCheckbox);
                     breakingLabel.append('BREAKING');
