@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BlueSky Geopolitical Trend Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Roboto Mono', monospace;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+        }
+        .keyword-indicator {
+            transition: background-color 0.5s ease-out, box-shadow 0.5s ease-out, color 0.5s ease-out;
+            text-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+            position: relative;
+            border: 1px solid #374151;
+        }
+        .status-dot.connected { background-color: #22c55e; }
+        .status-dot.disconnected { background-color: #ef4444; }
+        #tooltip {
+            position: absolute; display: none; background-color: #2d3748; color: #e2e8f0;
+            padding: 10px; border-radius: 8px; border: 1px solid #4a5568; max-width: 450px;
+            z-index: 100; font-size: 0.875rem; line-height: 1.4;
+            white-space: pre-wrap; max-height: 600px; overflow-y: auto;
+        }
+        .control-panel input[type="number"], .control-panel input[type="text"] {
+            background-color: #2d3748; border: 1px solid #4a5568; color: #e2e8f0;
+            border-radius: 5px; text-align: center;
+        }
+        .control-panel input[type="checkbox"] { transform: scale(1.2); margin-right: 8px; }
+        .btn { background-color: #3b82f6; color: white; padding: 4px 10px; border-radius: 5px; border: none; cursor: pointer; }
+        .btn:hover { background-color: #2563eb; }
+        .hide-btn { cursor: pointer; font-size: 1.2rem; line-height: 1; }
+        @keyframes flash-red {
+            0%, 100% { background-color: #ff0000; box-shadow: 0 0 25px #ff0000; }
+            50% { background-color: #500000; box-shadow: none; }
+        }
+        .flashing { animation: flash-red 1s infinite; }
+        .chart-container {
+            position: relative;
+            height: 40px; /* Height of the mini-chart */
+            margin-top: 8px;
+        }
+        .quoted-post { border-left: 2px solid #4a5568; padding-left: 8px; margin-bottom: 8px; }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+
+    <div id="tooltip"></div>
+
+    <div class="max-w-7xl mx-auto">
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl sm:text-4xl font-bold text-cyan-400 mb-2">BlueSky Geopolitical Trend Monitor</h1>
+            <div class="add-keyword-panel mt-4 flex items-center justify-center space-x-2 bg-gray-800 p-2 rounded-lg">
+                <input type="text" id="new-keyword-input" placeholder="Add new keyword..." class="p-1 w-48">
+                <button id="add-keyword-btn" class="btn">Add</button>
+                <div class="text-gray-400">|</div>
+                 <button id="restore-hidden-btn" class="btn">Restore Hidden</button>
+                 <div class="text-gray-400">|</div>
+                 <button id="reset-stats-btn" class="btn bg-red-600 hover:bg-red-700">Reset All Stats</button>
+            </div>
+            <div class="control-panel mt-2 grid grid-cols-2 md:flex items-center justify-center gap-4 bg-gray-800 p-2 rounded-lg">
+                <div class="flex items-center justify-center">
+                    <div id="status-dot" class="status-dot disconnected"></div><span id="status-text">...</span>
+                </div>
+                <div><span id="message-counter" class="font-bold text-cyan-400">0</span> Msgs</div>
+                <div title="Number of keyword-matched posts being monitored for quotes."><span id="watching-counter" class="font-bold text-cyan-400">0</span> Watching</div>
+                <label class="flex items-center cursor-pointer"><input type="checkbox" id="sound-toggle">Sound</label>
+                <label class="flex items-center">Alert:<input type="number" id="threshold-input" value="50" class="ml-2 p-1 w-16">/5m</label>
+                <label class="flex items-center">Flash:<input type="number" id="flash-threshold-input" value="100" class="ml-2 p-1 w-16">/5m</label>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div class="md:col-span-2">
+                 <h2 class="text-xl font-bold text-cyan-400 mb-2">Keyword Velocity</h2>
+                <div id="keyword-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+            </div>
+            <div class="md:col-span-1">
+                <h2 class="text-xl font-bold text-cyan-400 mb-2">Top Quoted Posts</h2>
+                <div id="top-quoted-posts" class="space-y-4 max-h-[600px] overflow-y-auto">
+                    <p class="text-gray-400">Monitoring for high-velocity posts...</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-8 p-4 bg-gray-800 rounded-lg shadow-lg">
+            <h2 class="text-xl font-bold text-cyan-400 mb-2">Highest-Priority Post</h2>
+            <div id="latest-post" class="text-gray-300 whitespace-pre-wrap break-words"><p>Awaiting most-quoted post...</p></div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const DEFAULT_KEYWORDS_CONFIG = [
+                { name: 'Ukraine', requiresBreaking: true }, { name: 'Russia', requiresBreaking: true },
+                { name: 'Iran', requiresBreaking: true }, { name: 'Israel', requiresBreaking: true },
+                { name: 'NATO', requiresBreaking: true }, { name: 'Zelensky', requiresBreaking: true },
+                { name: 'Putin', requiresBreaking: true }, { name: 'Trump', requiresBreaking: true },
+                { name: 'Sanctions', requiresBreaking: true }, { name: 'Explosions', requiresBreaking: true },
+                { name: 'Attack', requiresBreaking: true }, { name: 'White House', requiresBreaking: true },
+                { name: 'Hegseth', requiresBreaking: true }, { name: 'Vance', requiresBreaking: true },
+                { name: 'TACO', requiresBreaking: true }, { name: 'Truth Social', requiresBreaking: true },
+                { name: 'Drone', requiresBreaking: true }, { name: 'UAV', requiresBreaking: true },
+                { name: 'Nuclear', requiresBreaking: true }, { name: 'Tariffs', requiresBreaking: true },
+                { name: 'China', requiresBreaking: true }, { name: 'Taiwan', requiresBreaking: true },
+                { name: 'EU', requiresBreaking: true }, { name: 'Black Sea', requiresBreaking: true },
+                { name: 'Air Strike', requiresBreaking: true },
+                { name: 'Military Aid', requiresBreaking: false }, { name: 'Xi Jinping', requiresBreaking: false },
+                { name: 'Kyiv', requiresBreaking: false }, { name: 'Odesa', requiresBreaking: false },
+                { name: 'Lviv', requiresBreaking: false }, { name: 'Sumy', requiresBreaking: false },
+                { name: 'Zaporizhzhia', requiresBreaking: false }, { name: 'Dnipro', requiresBreaking: false },
+                { name: 'Crimea', requiresBreaking: false }, { name: 'Moscow', requiresBreaking: false },
+                { name: 'Kerch', requiresBreaking: false }, { name: 'UAF', requiresBreaking: false },
+                { name: 'SBU', requiresBreaking: false }, { name: 'Iskander', requiresBreaking: false },
+                { name: 'Spiderwebs', requiresBreaking: false }, { name: 'TU-95MS', requiresBreaking: false },
+                { name: 'Strategic Aviation', requiresBreaking: false }, { name: 'TU-95', requiresBreaking: false },
+                { name: 'launch manoeuvres', requiresBreaking: false }, { name: 'Strategic Bombers', requiresBreaking: false },
+                { name: 'Shahed Drones', requiresBreaking: false }, { name: 'Launches detected', requiresBreaking: false },
+                { name: 'Ballistic Missiles', requiresBreaking: false }, { name: 'Cruise Missiles', requiresBreaking: false },
+                { name: 'Olenya', requiresBreaking: false }, { name: 'Engels-2', requiresBreaking: false }
+            ];
+            const BREAKING_MODIFIERS = ['breaking', 'announce', 'alert', '🚨', '🔴'];
+            const MODIFIER_REGEX = new RegExp(BREAKING_MODIFIERS.join('|'), 'i');
+            const STORAGE_KEY = 'bskyTrendMonitorSettings_v6';
+            const MAX_POSTS_OF_INTEREST = 500;
+
+            const elements = { };
+            const state = { 
+                keywords: new Map(), 
+                postsOfInterest: new Map(),
+                totalMessages: 0, 
+                audio: { context: null, enabled: false },
+                tooltip: { hideTimer: null, currentKeyword: null },
+                chart: { globalMaxY: 10 }
+            };
+
+            function setup() {
+                cacheDOMElements();
+                loadSettings();
+                initializeUI();
+                setupEventListeners();
+                connect();
+                setInterval(updateHitRates, 5000);
+                setInterval(updateChartData, 60000);
+                setInterval(updateDashboard, 50);
+                setInterval(prunePostsOfInterest, 5 * 60 * 1000);
+            }
+
+            function cacheDOMElements() {
+                Object.assign(elements, {
+                    grid: document.getElementById('keyword-grid'), topQuotedPosts: document.getElementById('top-quoted-posts'),
+                    statusDot: document.getElementById('status-dot'), statusText: document.getElementById('status-text'),
+                    latestPost: document.getElementById('latest-post'), msgCounter: document.getElementById('message-counter'),
+                    watchingCounter: document.getElementById('watching-counter'),
+                    tooltip: document.getElementById('tooltip'), soundToggle: document.getElementById('sound-toggle'),
+                    thresholdInput: document.getElementById('threshold-input'), flashThresholdInput: document.getElementById('flash-threshold-input'),
+                    newKeywordInput: document.getElementById('new-keyword-input'), addKeywordBtn: document.getElementById('add-keyword-btn'),
+                    restoreHiddenBtn: document.getElementById('restore-hidden-btn'), resetStatsBtn: document.getElementById('reset-stats-btn'),
+                });
+            }
+
+            function loadSettings() {
+                const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+                const loadedKeywords = new Map(saved?.keywords);
+                DEFAULT_KEYWORDS_CONFIG.forEach(defaultKw => {
+                    const key = defaultKw.name.toLowerCase();
+                    if (!loadedKeywords.has(key)) {
+                        loadedKeywords.set(key, { name: defaultKw.name, requiresBreaking: defaultKw.requiresBreaking, hidden: false });
+                    }
+                });
+                loadedKeywords.forEach((kwData, key) => {
+                    const regex = generateRegexForKey(key);
+                    state.keywords.set(key, { 
+                        ...kwData, regex: regex, count: 0, hitsLast5Min: 0, hitTimestamps: [], 
+                        latestPosts: [],
+                        alertedAtThreshold: 0, ui: {},
+                        chart: { instance: null, data: { labels: Array(60).fill(''), datasets: [{ data: Array(60).fill(null) }] } }
+                    });
+                });
+                if (saved) {
+                    elements.soundToggle.checked = saved.soundEnabled ?? false;
+                    elements.thresholdInput.value = saved.alertThreshold ?? 50;
+                    elements.flashThresholdInput.value = saved.flashThreshold ?? 100;
+                }
+                state.audio.enabled = elements.soundToggle.checked;
+            }
+
+            function saveSettings() {
+                const settingsToSave = {
+                    keywords: Array.from(state.keywords.entries()).map(([key, kw]) => [key, { name: kw.name, requiresBreaking: kw.requiresBreaking, hidden: kw.hidden }]),
+                    soundEnabled: elements.soundToggle.checked,
+                    alertThreshold: elements.thresholdInput.value,
+                    flashThreshold: elements.flashThresholdInput.value,
+                };
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(settingsToSave));
+            }
+
+            function initializeUI() {
+                elements.grid.innerHTML = '';
+                state.keywords.forEach((kwState, key) => {
+                    if (kwState.hidden) return;
+                    
+                    const container = document.createElement('div');
+                    container.className = 'keyword-indicator p-3 bg-gray-800 rounded-lg flex flex-col justify-between min-h-[160px]';
+                    container.dataset.keyword = key;
+                    
+                    const header = document.createElement('div');
+                    header.className = 'flex justify-between items-start';
+                    const keywordText = document.createElement('span');
+                    keywordText.className = 'font-bold text-lg';
+                    keywordText.textContent = kwState.name;
+                    header.appendChild(keywordText);
+                    
+                    const counters = document.createElement('div');
+                    counters.className = 'text-right text-xs';
+                    const totalCountText = document.createElement('div');
+                    totalCountText.textContent = 'Total: 0';
+                    const min5CountText = document.createElement('div');
+                    min5CountText.className = 'font-bold';
+                    min5CountText.textContent = '5m: 0';
+                    counters.appendChild(min5CountText);
+                    counters.appendChild(totalCountText);
+                    header.appendChild(counters);
+
+                    const chartContainer = document.createElement('div');
+                    chartContainer.className = 'chart-container';
+                    const canvas = document.createElement('canvas');
+                    chartContainer.appendChild(canvas);
+                    
+                    const footer = document.createElement('div');
+                    footer.className = 'text-xs mt-2 flex justify-between items-center';
+                    const breakingLabel = document.createElement('label');
+                    breakingLabel.className = 'flex items-center cursor-pointer select-none';
+                    const breakingCheckbox = document.createElement('input');
+                    breakingCheckbox.type = 'checkbox';
+                    breakingCheckbox.className = 'mr-2';
+                    breakingCheckbox.checked = kwState.requiresBreaking;
+                    breakingCheckbox.addEventListener('change', () => {
+                        kwState.requiresBreaking = breakingCheckbox.checked;
+                        resetKeywordStats(kwState);
+                        saveSettings();
+                    });
+                    breakingLabel.appendChild(breakingCheckbox);
+                    breakingLabel.append('BREAKING');
+                    const hideBtn = document.createElement('span');
+                    hideBtn.textContent = '🗑️';
+                    hideBtn.className = 'hide-btn';
+                    hideBtn.title = 'Hide Keyword';
+                    hideBtn.addEventListener('click', () => hideKeyword(key));
+                    
+                    footer.appendChild(breakingLabel);
+                    footer.appendChild(hideBtn);
+
+                    container.appendChild(header);
+                    container.appendChild(chartContainer);
+                    container.appendChild(footer);
+                    
+                    elements.grid.appendChild(container);
+                    kwState.ui = { container, totalCountText, min5CountText };
+                    
+                    const ctx = canvas.getContext('2d');
+                    kwState.chart.instance = new Chart(ctx, {
+                        type: 'line', data: kwState.chart.data,
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                            scales: { 
+                                x: { display: false }, 
+                                y: { display: false, beginAtZero: true, max: state.chart.globalMaxY } 
+                            },
+                            elements: { point: { radius: 0 }, line: { tension: 0.4, borderWidth: 2, borderColor: '#3b82f6' } },
+                            animation: false
+                        }
+                    });
+                });
+            }
+            
+            function generateRegexForKey(key) {
+                const escapedKey = key.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                if (key === 'zelensky') return new RegExp(`\\bzelenskyy?\\b`, 'i');
+                return new RegExp(`\\b${escapedKey}(?:'s|s)?\\b`, 'i');
+            }
+            
+            function resetKeywordStats(kwState) {
+                kwState.count = 0;
+                kwState.hitTimestamps = [];
+                kwState.hitsLast5Min = 0;
+                kwState.alertedAtThreshold = 0;
+                kwState.latestPosts = [];
+                kwState.chart.data.labels = Array(60).fill('');
+                kwState.chart.data.datasets[0].data = Array(60).fill(null);
+                if (kwState.chart.instance) kwState.chart.instance.update();
+            }
+
+            function setupEventListeners() {
+                elements.soundToggle.addEventListener('change', () => { handleSoundToggle(); saveSettings(); });
+                elements.thresholdInput.addEventListener('input', saveSettings);
+                elements.flashThresholdInput.addEventListener('input', saveSettings);
+                elements.addKeywordBtn.addEventListener('click', addNewKeyword);
+                elements.newKeywordInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') addNewKeyword(); });
+                elements.restoreHiddenBtn.addEventListener('click', restoreHiddenKeywords);
+                elements.resetStatsBtn.addEventListener('click', () => {
+                    if (confirm('Are you sure you want to reset all hit counters to zero?')) {
+                        state.keywords.forEach(resetKeywordStats);
+                        state.postsOfInterest.clear();
+                        updateTopQuotedPostsUI();
+                    }
+                });
+                
+                elements.grid.addEventListener('mouseover', handleTooltipShow);
+                elements.grid.addEventListener('mouseout', handleTooltipHide);
+                elements.tooltip.addEventListener('mouseover', () => clearTimeout(state.tooltip.hideTimer));
+                elements.tooltip.addEventListener('mouseout', handleTooltipHide);
+            }
+            
+            function addNewKeyword() {
+                const newKeywordName = elements.newKeywordInput.value.trim();
+                if (!newKeywordName) return;
+                const key = newKeywordName.toLowerCase();
+                if (state.keywords.has(key)) {
+                    const kw = state.keywords.get(key);
+                    if (kw.hidden) kw.hidden = false;
+                    else { alert(`Keyword "${newKeywordName}" already exists.`); return; }
+                } else {
+                    const regex = generateRegexForKey(key);
+                    state.keywords.set(key, { 
+                        name: newKeywordName, regex: regex, requiresBreaking: false, hidden: false, 
+                        count: 0, hitsLast5Min: 0, hitTimestamps: [], latestPosts: [], alertedAtThreshold: 0, ui: {},
+                        chart: { instance: null, data: { labels: Array(60).fill(''), datasets: [{ data: Array(60).fill(null) }] } }
+                    });
+                }
+                initializeUI();
+                saveSettings();
+                elements.newKeywordInput.value = '';
+            }
+
+            function hideKeyword(key) {
+                const kw = state.keywords.get(key);
+                if (kw) {
+                    if (kw.chart.instance) kw.chart.instance.destroy();
+                    kw.hidden = true;
+                    kw.ui.container.remove();
+                    saveSettings();
+                }
+            }
+            
+            function restoreHiddenKeywords() {
+                state.keywords.forEach(kw => {
+                    if (kw.hidden) {
+                        kw.hidden = false;
+                        if(kw.chart.instance) kw.chart.instance.destroy();
+                    }
+                });
+                initializeUI();
+                saveSettings();
+            }
+
+            function connect() {
+                const socket = new WebSocket('wss://jetstream1.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post');
+                socket.onopen = () => { elements.statusDot.className = 'status-dot connected'; elements.statusText.textContent = 'Connected'; };
+                socket.onmessage = (e) => { state.totalMessages++; try { processStreamMessage(JSON.parse(e.data)); } catch (err) {} };
+                socket.onclose = () => { elements.statusDot.className = 'status-dot disconnected'; elements.statusText.textContent = 'Retrying...'; setTimeout(connect, 5000); };
+                socket.onerror = (e) => { console.error(e); socket.close(); };
+            }
+
+            function processStreamMessage(message) {
+                if (message?.commit?.operation !== 'create') return;
+                const record = message.commit.record;
+                const postText = record?.text;
+                if (record?.$type !== 'app.bsky.feed.post' || !postText || record.reply || !record.langs?.includes('en')) return;
+                
+                const postUri = `at://${message.did}/${message.commit.collection}/${message.commit.rkey}`;
+                const quotedPostUri = record.embed?.record?.uri;
+                
+                if (quotedPostUri && state.postsOfInterest.has(quotedPostUri)) {
+                    const post = state.postsOfInterest.get(quotedPostUri);
+                    post.quoteCount++;
+                    requestAnimationFrame(updateTopQuotedPostsUI);
+                }
+
+                const matchedKeywords = new Set();
+                state.keywords.forEach((kwState) => {
+                    if (kwState.hidden) return;
+                    if (kwState.requiresBreaking && !MODIFIER_REGEX.test(postText)) return;
+                    if (kwState.regex.test(postText)) {
+                        matchedKeywords.add(kwState);
+                    }
+                });
+
+                if (matchedKeywords.size > 0) {
+                    if (!state.postsOfInterest.has(postUri)) {
+                        state.postsOfInterest.set(postUri, { text: postText, quoteCount: 0, createdAt: Date.now() });
+                    }
+                    
+                    const alertThreshold = parseInt(elements.thresholdInput.value, 10);
+                    matchedKeywords.forEach(kwState => {
+                        kwState.count++;
+                        kwState.hitTimestamps.push(Date.now());
+                        kwState.latestPosts.unshift({ uri: postUri, text: postText });
+                        // **FIX 1**: Remove the line that limits the array size
+                        // if (kwState.latestPosts.length > 7) kwState.latestPosts.pop();
+                        
+                        if (state.audio.enabled && kwState.hitsLast5Min >= alertThreshold && kwState.alertedAtThreshold < alertThreshold) {
+                            playTickSound();
+                            kwState.alertedAtThreshold = alertThreshold;
+                        }
+                    });
+                }
+            }
+            
+            function prunePostsOfInterest() {
+                const oneHourAgo = Date.now() - (60 * 60 * 1000);
+                let changed = false;
+                state.postsOfInterest.forEach((post, uri) => {
+                    if(post.createdAt < oneHourAgo && post.quoteCount === 0) {
+                        state.postsOfInterest.delete(uri);
+                        changed = true;
+                    }
+                });
+               
+                if (state.postsOfInterest.size > MAX_POSTS_OF_INTEREST) {
+                    const sorted = [...state.postsOfInterest.entries()].sort((a, b) => b[1].quoteCount - a[1].quoteCount || b[1].createdAt - a[1].createdAt);
+                    const toKeep = new Map(sorted.slice(0, MAX_POSTS_OF_INTEREST));
+                    state.postsOfInterest = toKeep;
+                    changed = true;
+                }
+
+                if (changed) updateTopQuotedPostsUI();
+            }
+            
+            function updateTopQuotedPostsUI() {
+                const topPosts = [...state.postsOfInterest.entries()]
+                    .filter(([uri, post]) => post.quoteCount > 0)
+                    .sort((a, b) => b[1].quoteCount - a[1].quoteCount);
+
+                if (topPosts.length === 0) {
+                    elements.topQuotedPosts.innerHTML = '<p class="text-gray-400">Monitoring for quoted posts...</p>';
+                    elements.latestPost.innerHTML = '<p>Awaiting most-quoted post...</p>';
+                    return;
+                }
+
+                const top10ForDisplay = topPosts.slice(0, 10);
+                elements.topQuotedPosts.innerHTML = top10ForDisplay.map(([uri, post]) => {
+                    const sanitizedText = post.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                    return `
+                        <div class="quoted-post bg-gray-800 p-2 rounded-md">
+                            <p class="font-bold text-cyan-400">Quotes: ${post.quoteCount}</p>
+                            <p class="text-sm text-gray-300">${sanitizedText.substring(0, 200)}${sanitizedText.length > 200 ? '...' : ''}</p>
+                        </div>
+                    `;
+                }).join('');
+
+                const highestPriorityPost = topPosts[0][1];
+                const sanitizedText = highestPriorityPost.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                elements.latestPost.innerHTML = `<p class="mb-2"><strong>Most Quoted (Quotes: ${highestPriorityPost.quoteCount})</strong></p><p>${sanitizedText}</p>`;
+            }
+
+            function updateHitRates() { 
+                const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+                let currentMax = 0;
+                state.keywords.forEach(kw => {
+                    if(kw.hidden) return;
+                    kw.hitTimestamps = kw.hitTimestamps.filter(ts => ts > fiveMinutesAgo);
+                    kw.hitsLast5Min = kw.hitTimestamps.length;
+                    if(kw.hitsLast5Min > currentMax) currentMax = kw.hitsLast5Min;
+                });
+                state.chart.globalMaxY = Math.max(10, currentMax + 5);
+            }
+            
+            function updateChartData() {
+                const now = new Date();
+                const currentMinuteLabel = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+                
+                state.keywords.forEach(kw => {
+                    if (kw.hidden || !kw.chart.instance) return;
+                    kw.chart.data.labels.shift();
+                    kw.chart.data.labels.push(currentMinuteLabel);
+                    kw.chart.data.datasets[0].data.shift();
+                    kw.chart.data.datasets[0].data.push(kw.hitsLast5Min);
+                });
+            }
+
+            function updateDashboard() {
+                elements.msgCounter.textContent = state.totalMessages.toLocaleString();
+                elements.watchingCounter.textContent = state.postsOfInterest.size;
+                state.keywords.forEach(kw => {
+                    if (kw.hidden || !kw.ui.container) return;
+                    const flashThreshold = parseInt(elements.flashThresholdInput.value, 10) || 100;
+                    const intensity = Math.min(1, kw.hitsLast5Min / flashThreshold);
+                    const color = getColorForIntensity(intensity);
+                    
+                    kw.ui.container.style.backgroundColor = color.bg;
+                    kw.ui.container.style.boxShadow = `0 0 15px ${color.shadow}`;
+                    kw.ui.container.style.color = color.text;
+                    
+                    if (kw.chart.instance) {
+                        kw.chart.instance.options.scales.y.max = state.chart.globalMaxY;
+                        kw.chart.instance.data.datasets[0].borderColor = color.text;
+                        kw.chart.instance.update('none');
+                    }
+                    
+                    kw.ui.container.classList.toggle('flashing', kw.hitsLast5Min >= flashThreshold);
+                    kw.ui.totalCountText.textContent = `Total: ${kw.count}`;
+                    kw.ui.min5CountText.textContent = `5m: ${kw.hitsLast5Min}`;
+                });
+            }
+            
+            function getColorForIntensity(intensity) { 
+                if (intensity <= 0) return { bg: '#1f2937', text: '#3b82f6', shadow: 'transparent' };
+                if (intensity < 0.2) return interpolateColor('#3b82f6', '#ffffff', intensity / 0.2);
+                if (intensity < 0.4) return interpolateColor('#ffffff', '#fef08a', (intensity - 0.2) / 0.2);
+                if (intensity < 0.6) return interpolateColor('#fef08a', '#fb923c', (intensity - 0.4) / 0.2);
+                if (intensity < 0.8) return interpolateColor('#fb923c', '#f472b6', (intensity - 0.6) / 0.2);
+                return interpolateColor('#f472b6', '#ef4444', (intensity - 0.8) / 0.2);
+            }
+            function interpolateColor(c1, c2, f) { 
+                const c1rgb = hexToRgb(c1), c2rgb = hexToRgb(c2);
+                const r = Math.round(c1rgb.r + f * (c2rgb.r - c1rgb.r));
+                const g = Math.round(c1rgb.g + f * (c2rgb.g - c1rgb.g));
+                const b = Math.round(c1rgb.b + f * (c2rgb.b - c1rgb.b));
+                const textColor = (r*0.299 + g*0.587 + b*0.114) > 186 ? '#1a1a1a' : '#e0e0e0';
+                const bg = `rgb(${r},${g},${b})`;
+                return { bg, text: textColor, shadow: bg };
+            }
+            function hexToRgb(h) { 
+                const r = parseInt(h.slice(1, 3), 16), g = parseInt(h.slice(3, 5), 16), b = parseInt(h.slice(5, 7), 16);
+                return { r, g, b };
+            }
+            function handleSoundToggle() { 
+                state.audio.enabled = elements.soundToggle.checked;
+                if(state.audio.enabled && !state.audio.context) state.audio.context = new (window.AudioContext || window.webkitAudioContext)();
+                if(state.audio.enabled && state.audio.context.state === 'suspended') state.audio.context.resume();
+            }
+            
+            function handleTooltipShow(e) {
+                const target = e.target.closest('.keyword-indicator');
+                if (!target || !target.dataset.keyword) return;
+                
+                clearTimeout(state.tooltip.hideTimer);
+                state.tooltip.currentKeyword = target.dataset.keyword;
+
+                const kwState = state.keywords.get(target.dataset.keyword);
+                if (kwState && kwState.latestPosts.length > 0) {
+                    const sortedPosts = kwState.latestPosts
+                        .map(postInfo => {
+                            const postData = state.postsOfInterest.get(postInfo.uri);
+                            return { 
+                                uri: postInfo.uri, 
+                                text: postData?.text || postInfo.text,
+                                quoteCount: postData?.quoteCount || 0
+                            };
+                        })
+                        .sort((a, b) => b.quoteCount - a.quoteCount)
+                        // **FIX 2**: Add slice to limit to top 7
+                        .slice(0, 7);
+
+                    const formattedPosts = sortedPosts
+                        .map((post, i) => `${i + 1}. (Quotes: ${post.quoteCount}) ${post.text.substring(0, 150)}${post.text.length > 150 ? '...' : ''}`)
+                        .join('\n\n');
+
+                    elements.tooltip.textContent = formattedPosts;
+                    
+                    const rect = target.getBoundingClientRect();
+                    elements.tooltip.style.display = 'block';
+                    let top = rect.bottom + window.scrollY + 5;
+                    if (top + elements.tooltip.offsetHeight > window.innerHeight + window.scrollY) {
+                        top = rect.top + window.scrollY - elements.tooltip.offsetHeight - 5;
+                    }
+
+                    let left = rect.left + window.scrollX;
+                    if (left + elements.tooltip.offsetWidth > window.innerWidth) {
+                        left = window.innerWidth - elements.tooltip.offsetWidth - 10;
+                    }
+                    
+                    elements.tooltip.style.left = `${left}px`;
+                    elements.tooltip.style.top = `${top}px`;
+                } else {
+                    elements.tooltip.style.display = 'none';
+                }
+            }
+            
+            function handleTooltipHide(e) {
+                state.tooltip.hideTimer = setTimeout(() => {
+                    elements.tooltip.style.display = 'none';
+                }, 200);
+            }
+            
+            function playTickSound() { 
+                if (!state.audio.context || !state.audio.enabled) return;
+                const o = state.audio.context.createOscillator(), g = state.audio.context.createGain();
+                o.type = 'sine'; o.frequency.setValueAtTime(880, state.audio.context.currentTime);
+                g.gain.setValueAtTime(0.3, state.audio.context.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, state.audio.context.currentTime + 0.1);
+                o.connect(g); g.connect(state.audio.context.destination); o.start(); o.stop(state.audio.context.currentTime + 0.1);
+            }
+
+            setup();
+        });
+    </script>
+</body>
+</html>
