@@ -78,7 +78,7 @@
         <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div class="md:col-span-2">
                  <h2 class="text-xl font-bold text-cyan-400 mb-2">Keyword Velocity</h2>
-                <div id="keyword-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+                <div id="keyword-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4"></div>
             </div>
             <div class="md:col-span-1">
                 <h2 class="text-xl font-bold text-cyan-400 mb-2">Top Quoted Posts</h2>
@@ -508,6 +508,23 @@
                     kw.ui.totalCountText.textContent = `Total: ${kw.count}`;
                     kw.ui.min5CountText.textContent = `5m: ${kw.hitsLast5Min}`;
                 });
+                reorderKeywordGrid();
+            }
+
+            function reorderKeywordGrid() {
+                const grid = elements.grid;
+                const items = Array.from(grid.children);
+
+                items.sort((a, b) => {
+                    const kwA = state.keywords.get(a.dataset.keyword);
+                    const kwB = state.keywords.get(b.dataset.keyword);
+                    // Default to 0 if keyword data somehow missing, though unlikely
+                    const hitsA = kwA ? kwA.hitsLast5Min : 0;
+                    const hitsB = kwB ? kwB.hitsLast5Min : 0;
+                    return hitsB - hitsA; // Sort descending
+                });
+
+                items.forEach(item => grid.appendChild(item));
             }
             
             function getColorForIntensity(intensity) { 
@@ -567,9 +584,14 @@
                     
                     const rect = target.getBoundingClientRect();
                     elements.tooltip.style.display = 'block';
-                    let top = rect.bottom + window.scrollY + 5;
+                    let top = rect.bottom + window.scrollY + 5; // Default below
+                    // If tooltip goes off bottom, try to position above
                     if (top + elements.tooltip.offsetHeight > window.innerHeight + window.scrollY) {
                         top = rect.top + window.scrollY - elements.tooltip.offsetHeight - 5;
+                    }
+                    // Ensure tooltip doesn't go off the top of the viewport
+                    if (top < window.scrollY + 5) {
+                        top = window.scrollY + 5;
                     }
 
                     let left = rect.left + window.scrollX;
