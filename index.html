@@ -147,7 +147,7 @@
                 connect();
                 setInterval(updateHitRates, 5000);
                 setInterval(updateChartData, 60000);
-                setInterval(updateDashboard, 50);
+                setInterval(updateDashboard, 250); // Changed from 50 to 250
                 setInterval(prunePostsOfInterest, 5 * 60 * 1000);
             }
 
@@ -518,6 +518,8 @@
                 // globalMaxY should be the greater of current activity max or historical max, plus buffer
                 const overallMax = Math.max(currentMax, maxHistoricalDataPoint);
                 state.chart.globalMaxY = Math.max(10, overallMax + 5);
+
+                reorderKeywordGrid(); // Added call here
             }
             
             function updateChartData() {
@@ -556,7 +558,7 @@
                     kw.ui.totalCountText.textContent = `Total: ${kw.count}`;
                     kw.ui.min5CountText.textContent = `5m: ${kw.hitsLast5Min}`;
                 });
-                reorderKeywordGrid();
+                // reorderKeywordGrid() call removed from here
             }
 
             function reorderKeywordGrid() {
