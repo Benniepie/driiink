@@ -312,13 +312,16 @@
                     });
                 });
             }
-            
             function generateRegexForKey(key) {
+                if (key === 'zelensky') return new RegExp(`(?<!\\w)zelenskyy?(?!\\w)`, 'i');
                 const escapedKey = key.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                if (key === 'zelensky') return new RegExp(`\\bzelenskyy?\\b`, 'i');
-                return new RegExp(`\\b${escapedKey}(?:'s|s)?\\b`, 'i');
-            }
-            
+                const phraseKey = escapedKey.replace(/\s+/g, '\\s+');
+                let finalKey = phraseKey;
+                if (!key.includes(' ') && !key.endsWith('s')) {
+                    finalKey += "(?:'s|s)?";
+                }
+                return new RegExp(`(?<!\\w)${finalKey}(?!\\w)`, 'i');
+            } 
             function resetKeywordStats(kwState) {
                 kwState.count = 0;
                 kwState.hitTimestamps = [];
