@@ -173,10 +173,29 @@
                         loadedKeywords.set(key, { name: defaultKw.name, requiresBreaking: defaultKw.requiresBreaking, hidden: false });
                     }
                 });
-                loadedKeywords.forEach((kwData, key) => {
+                loadedKeywords.forEach((loadedKwData, key) => { // Renamed kwData to loadedKwData for clarity
+                    const defaultKeywordConfig = DEFAULT_KEYWORDS_CONFIG.find(dk => dk.name.toLowerCase() === key);
+                    // For requiresBreaking: use stored boolean, else default config's value, else false.
+                    let requiresBreakingValue = defaultKeywordConfig ? defaultKeywordConfig.requiresBreaking : false;
+                    if (typeof loadedKwData.requiresBreaking === 'boolean') {
+                        requiresBreakingValue = loadedKwData.requiresBreaking;
+                    }
+                    // For hidden: use stored boolean, else default config's value (if any), else false.
+                    let hiddenValue = defaultKeywordConfig ? (defaultKeywordConfig.hidden || false) : false;
+                    if (typeof loadedKwData.hidden === 'boolean') {
+                        hiddenValue = loadedKwData.hidden;
+                    }
+
+                    const finalKwData = {
+                        name: loadedKwData.name, // Name should always exist from either default or previous save
+                        requiresBreaking: requiresBreakingValue,
+                        hidden: hiddenValue,
+                    };
+
                     const regex = generateRegexForKey(key);
                     state.keywords.set(key, { 
-                        ...kwData, regex: regex, count: 0, hitsLast5Min: 0, hitTimestamps: [], 
+                        ...finalKwData, // Use the sanitized data
+                        regex: regex, count: 0, hitsLast5Min: 0, hitTimestamps: [],
                         latestPosts: [],
                         alertedAtThreshold: 0, ui: {},
                         chart: { instance: null, data: { labels: Array(60).fill(''), datasets: [{ data: Array(60).fill(null) }] } }
@@ -467,9 +486,24 @@
                     if(kw.hidden) return;
                     kw.hitTimestamps = kw.hitTimestamps.filter(ts => ts > fiveMinutesAgo);
                     kw.hitsLast5Min = kw.hitTimestamps.length;
+                    // currentMax will track the highest of current kw.hitsLast5Min
                     if(kw.hitsLast5Min > currentMax) currentMax = kw.hitsLast5Min;
                 });
-                state.chart.globalMaxY = Math.max(10, currentMax + 5);
+
+                // Now, find the maximum value from all historical chart data
+                let maxHistoricalDataPoint = 0;
+                state.keywords.forEach(kw => {
+                    if (kw.hidden || !kw.chart.instance) return;
+                    kw.chart.data.datasets[0].data.forEach(dataPoint => {
+                        if (dataPoint !== null && dataPoint > maxHistoricalDataPoint) {
+                            maxHistoricalDataPoint = dataPoint;
+                        }
+                    });
+                });
+
+                // globalMaxY should be the greater of current activity max or historical max, plus buffer
+                const overallMax = Math.max(currentMax, maxHistoricalDataPoint);
+                state.chart.globalMaxY = Math.max(10, overallMax + 5);
             }
             
             function updateChartData() {
