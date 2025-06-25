@@ -268,8 +268,12 @@
 
                         if (keywordStateToUpdate) {
                             keywordStateToUpdate.requiresBreaking = checkboxIsChecked;
-                            resetKeywordStats(keywordStateToUpdate);
-                            saveSettings();
+
+                            // Defer subsequent actions slightly
+                            setTimeout(() => {
+                                resetKeywordStats(keywordStateToUpdate);
+                                saveSettings();
+                            }, 0);
                         } else {
                             console.error("Breaking checkbox: Could not find keyword state for key:", currentKeyForListener);
                         }
