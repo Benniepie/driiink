@@ -408,10 +408,14 @@
                 if (message?.commit?.operation !== 'create') return;
                 const record = message.commit.record;
                 const postText = record?.text;
-                if (record?.$type !== 'app.bsky.feed.post' || !postText || record.reply || !record.langs?.includes('en')) return;
+                if (record?.$type !== 'app.bsky.feed.post' || !postText) return;
+                if (record.langs && !record.langs.includes('en')) return;
                 
                 const postUri = `at://${message.did}/${message.commit.collection}/${message.commit.rkey}`;
-                const quotedPostUri = record.embed?.record?.uri;
+                let quotedPostUri = record.embed?.record?.uri;
+                if (!quotedPostUri && record.embed?.$type === 'app.bsky.embed.recordWithMedia') {
+                    quotedPostUri = record.embed.record?.record?.uri;
+                }
                 
                 if (quotedPostUri && state.postsOfInterest.has(quotedPostUri)) {
                     const post = state.postsOfInterest.get(quotedPostUri);
