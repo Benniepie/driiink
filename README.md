@@ -11,7 +11,23 @@ This project is a web-based application designed for analyzing keyword data. It 
 
 ## Getting Started
 
-(Instructions on how to set up and run the project will be added here once the project structure is more defined.)
+You can run this project locally using Docker Compose.
+
+1. Ensure you have Docker and Docker Compose installed.
+2. Clone this repository.
+3. Run the following command to start the application:
+
+```bash
+docker compose up -d
+```
+
+4. The application will be available at `http://localhost:8080`.
+
+To stop the application, run:
+
+```bash
+docker compose down
+```
 
 ## Technologies Used
 
